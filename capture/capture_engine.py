@@ -1,6 +1,8 @@
 import sys
 import os
 import time
+import json
+import datetime
 import joblib
 import numpy as np
 import pandas as pd
@@ -15,11 +17,26 @@ le = joblib.load('/home/lingkong/NAIDS_Project/model/label_encoder.pkl')
 print("✅ AI Model loaded successfully")
 
 # ─── Flow Storage ────────────────────────────────────────────
-# A flow = group of packets between same src/dst IP and port
 flows = defaultdict(list)
 alert_log = []
 
-# ─── Feature Columns (must match training data exactly) ──────
+# Path to alerts file
+ALERTS_FILE = '/home/lingkong/NAIDS_Project/api/alerts.json'
+
+def save_alert(alert):
+    """Save a new alert to the JSON file"""
+    try:
+        with open(ALERTS_FILE, 'r') as f:
+            alerts = json.load(f)
+        alerts.append(alert)
+        if len(alerts) > 1000:
+            alerts = alerts[-1000:]
+        with open(ALERTS_FILE, 'w') as f:
+            json.dump(alerts, f, indent=2)
+    except Exception as e:
+        print(f"Error saving alert: {e}")
+
+# ─── Feature Columns ─────────────────────────────────────────
 FEATURE_COLUMNS = [
     'Destination Port', 'Flow Duration', 'Total Fwd Packets',
     'Total Length of Fwd Packets', 'Fwd Packet Length Max',
@@ -50,7 +67,6 @@ def extract_features(packet_list):
     if len(packet_list) < 2:
         return None
 
-    # Separate forward and backward packets
     first_pkt = packet_list[0]
     src_ip = first_pkt['src']
 
@@ -62,12 +78,10 @@ def extract_features(packet_list):
     all_lengths = [p['length'] for p in packet_list]
     timestamps = [p['time'] for p in packet_list]
 
-    # Flow duration in microseconds
     flow_duration = (timestamps[-1] - timestamps[0]) * 1e6
     if flow_duration == 0:
         flow_duration = 1
 
-    # Inter-arrival times
     iats = [timestamps[i+1] - timestamps[i]
             for i in range(len(timestamps)-1)]
     fwd_times = [p['time'] for p in fwd_packets]
@@ -77,7 +91,6 @@ def extract_features(packet_list):
     bwd_iats = [bwd_times[i+1] - bwd_times[i]
                 for i in range(len(bwd_times)-1)] if len(bwd_times) > 1 else [0]
 
-    # Flag counts
     fin_count = sum(1 for p in packet_list if p.get('flags', 0) & 0x01)
     psh_count = sum(1 for p in packet_list if p.get('flags', 0) & 0x08)
     ack_count = sum(1 for p in packet_list if p.get('flags', 0) & 0x10)
@@ -161,10 +174,8 @@ def process_packet(packet):
         elif packet.haslayer(UDP):
             dport = packet[UDP].dport
 
-        # Create flow key
         flow_key = f"{src}-{dst}-{dport}"
 
-        # Store packet info in flow
         flows[flow_key].append({
             'src': src, 'dst': dst,
             'length': length, 'time': timestamp,
@@ -172,35 +183,37 @@ def process_packet(packet):
             'window': window
         })
 
-        # Analyse flow when we have 10 packets
         if len(flows[flow_key]) == 10:
             features = extract_features(flows[flow_key])
             if features:
-                # Build dataframe with correct column order
                 df = pd.DataFrame([features])[FEATURE_COLUMNS]
                 prediction_encoded = model.predict(df)[0]
                 prediction = le.inverse_transform([prediction_encoded])[0]
                 confidence = max(model.predict_proba(df)[0]) * 100
 
-                # Print result
                 timestamp_str = time.strftime('%H:%M:%S')
+
                 if prediction != 'Normal Traffic':
                     print(f"🚨 [{timestamp_str}] ALERT: {prediction} "
                           f"detected from {src} → {dst} "
                           f"(Confidence: {confidence:.1f}%)")
-                    alert_log.append({
+                    alert = {
                         'time': timestamp_str,
+                        'date': datetime.datetime.now().strftime('%Y-%m-%d'),
                         'type': prediction,
                         'src': src,
                         'dst': dst,
-                        'confidence': confidence
-                    })
+                        'confidence': round(confidence, 1),
+                        'severity': 'High' if confidence > 90 else
+                                   'Medium' if confidence > 70 else 'Low'
+                    }
+                    alert_log.append(alert)
+                    save_alert(alert)
                 else:
                     print(f"✅ [{timestamp_str}] Normal traffic: "
                           f"{src} → {dst} "
                           f"(Confidence: {confidence:.1f}%)")
 
-            # Reset flow after analysis
             flows[flow_key] = []
 
     except Exception as e:
@@ -209,6 +222,7 @@ def process_packet(packet):
 # ─── Start Capture ────────────────────────────────────────────
 print("\n✅ Starting live capture on interface: wlo1")
 print("✅ AI model watching your network traffic")
+print("✅ Alerts being saved to api/alerts.json")
 print("Press Ctrl+C to stop\n")
 
 try:
@@ -221,4 +235,4 @@ except KeyboardInterrupt:
         for alert in alert_log:
             print(f"  {alert['time']} | {alert['type']} | "
                   f"{alert['src']} → {alert['dst']} | "
-                  f"{alert['confidence']:.1f}%")
+                  f"{alert['confidence']}% | {alert['severity']}")
