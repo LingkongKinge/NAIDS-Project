@@ -15,4 +15,4 @@ print("\n=== COLUMN NAMES ===")
 print(df.columns.tolist())
 
 print("\n=== ATTACK TYPES IN DATASET ===")
-print(df['Label'].value_counts())
+print(df['Attack Type'].value_counts())
