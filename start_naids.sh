@@ -19,7 +19,7 @@ sleep 2
 
 # Open dashboard in browser
 echo "Opening dashboard..."
-firefox http://127.0.0.1:5500/dashboard/index.html &
+google-chrome http://127.0.0.1:5500/dashboard/index.html &
 sleep 2
 
 echo ""

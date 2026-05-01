@@ -1,4 +1,4 @@
-from flask import Flask, jsonify
+from flask import Flask, jsonify, send_from_directory
 from flask_cors import CORS
 import json
 import os
@@ -91,6 +91,14 @@ def home():
         'status': 'running',
         'routes': ['/alerts', '/stats', '/status', '/clear']
     })
+
+# ─── ROUTE: Serve Dashboard ──────────────────────────────────
+@app.route('/dashboard')
+def dashboard():
+    return send_from_directory(
+        '/home/lingkong/NAIDS_Project/dashboard',
+        'index.html'
+    )
 
 if __name__ == '__main__':
     print("=== NAIDS Flask API Starting ===")

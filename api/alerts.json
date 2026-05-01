@@ -1,1 +1,15 @@
-[] 
+[
+  {
+    "time": "11:20:56",
+    "date": "2026-04-28",
+    "type": "Zero-Day Anomaly",
+    "src": "13.107.213.40",
+    "dst": "192.168.1.123",
+    "confidence": 100.0,
+    "severity": "MEDIUM",
+    "engines": "IF",
+    "action": "MONITOR",
+    "message": "Slightly unusual traffic pattern detected. Monitoring recommended.",
+    "status": "active",
+    "rf_attack": "Normal Traffic",
+    "if_anomaly": 
