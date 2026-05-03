@@ -6,6 +6,47 @@ import os
 # ─── Path to blocked IPs storage ─────────────────────────────
 BLOCKED_IPS_FILE = '/home/lingkong/NAIDS_Project/api/blocked_ips.json'
 
+# ─── Trusted IP Whitelist ─────────────────────────────────────
+# These IP prefixes are NEVER blocked regardless of AI detection
+WHITELISTED_PREFIXES = [
+    # Local network
+    '192.168.1.',        # Entire local network
+    '127.0.0.',          # Localhost
+    # Google services
+    '8.8.8.',            # Google DNS
+    '8.8.4.',            # Google DNS
+    '142.250.',          # Google servers
+    '172.217.',          # Google servers
+    '216.58.',           # Google servers
+    # Microsoft services
+    '13.107.',           # Microsoft
+    '52.96.',            # Microsoft Office 365
+    '40.96.',            # Microsoft
+    '20.190.',           # Microsoft Azure
+    '52.184.',           # Microsoft
+    # Cloudflare
+    '104.16.',           # Cloudflare
+    '104.17.',           # Cloudflare
+    '104.18.',           # Cloudflare
+    '1.1.1.',            # Cloudflare DNS
+    '1.0.0.',            # Cloudflare DNS
+    # Meta — WhatsApp and Facebook
+    '157.240.',          # WhatsApp/Facebook
+    '31.13.',            # Facebook
+    '179.60.',           # Facebook
+    # Telegram
+    '149.154.',          # Telegram servers
+    '91.108.',           # Telegram servers
+    # Amazon AWS
+    '52.94.',            # Amazon AWS
+    '54.230.',           # Amazon CloudFront
+    '13.224.',           # Amazon CloudFront
+    # African ISPs
+    '196.216.',          # MTN Cameroon
+    '197.0.',            # Orange Cameroon
+    '196.201.',          # Camtel
+]
+
 # ─── Load blocked IPs from file ──────────────────────────────
 def load_blocked_ips():
     """Read all blocked IPs from JSON file"""
@@ -171,20 +212,26 @@ def get_blocked_ips():
 # ─── Auto-block critical threats ─────────────────────────────
 def auto_block_if_critical(analysis_result, src_ip):
     """
-    Automatically block IP if threat is critical
-    Called by capture engine for every detected threat
-    Returns True if auto-blocked, False otherwise
+    Automatically block IP if threat is critical.
+    Only fires when both engines agree (BLOCK_IMMEDIATELY).
+    Never blocks whitelisted IPs.
     """
+    # ── CHECK WHITELIST FIRST ─────────────────────────────────
+    for prefix in WHITELISTED_PREFIXES:
+        if src_ip.startswith(prefix):
+            return False
+
+    # ── CHECK IF THREAT ───────────────────────────────────────
     if not analysis_result.get('is_threat'):
         return False
 
-    confidence = analysis_result.get('confidence', 0)
-    attack_type = analysis_result.get('attack_type', '')
+    confidence   = analysis_result.get('confidence', 0)
+    attack_type  = analysis_result.get('attack_type', '')
     recommendation = analysis_result.get('recommendation', {})
-    action = recommendation.get('action', '')
+    action       = recommendation.get('action', '')
 
-    # Auto-block only if confidence is 95%+ or both engines agree
-    if confidence >= 95 or action == 'BLOCK_IMMEDIATELY':
+    # ── AUTO-BLOCK ONLY WHEN BOTH ENGINES AGREE ───────────────
+    if action == 'BLOCK_IMMEDIATELY':
         result = block_ip(
             src_ip,
             reason=f'Auto-blocked: {attack_type} '
